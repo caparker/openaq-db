@@ -328,7 +328,8 @@ CREATE INDEX ON sensor_nodes_json USING GIN (json);
 -- sensors_id NOT IN (
 DROP VIEW IF EXISTS version_ranks CASCADE;
 CREATE OR REPLACE VIEW version_ranks AS
-SELECT v.parent_sensors_id
+SELECT versions_id
+, v.parent_sensors_id
 , v.sensors_id
 , lc.life_cycles_id
 , v.version_date
@@ -340,6 +341,21 @@ SELECT v.parent_sensors_id
 ) as version_rank
 FROM versions v
 JOIN life_cycles lc USING (life_cycles_id);
+
+CREATE OR REPLACE VIEW versions_view AS
+SELECT r.versions_id
+, r.sensors_id
+, r.parent_sensors_id
+, r.life_cycles_id
+, s.source_id as sensor
+, p.source_id as parent_sensor
+, r.version_date
+, r.label as life_cycle
+, r.version_rank
+FROM version_ranks r
+JOIN sensors s ON (s.sensors_id = r.sensors_id)
+JOIN sensors p ON (p.sensors_id = r.parent_sensors_id);
+
 
 CREATE OR REPLACE VIEW stale_versions AS
 SELECT sensors_id

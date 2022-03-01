@@ -68,6 +68,16 @@ INSERT INTO measurands (measurand, units, display, description, is_core) VALUES
 , 'atm'
 , 'Atmospheric or barometric pressure'
 , true)
+, ( 'pm10'
+, 'ppm'
+, 'ppm'
+, 'Particles in parts per million'
+, true)
+, ( 'pm25'
+, 'ppm'
+, 'ppm'
+, 'Particles in parts per million'
+, true)
 , ( 'wind_direction'
 , 'deg'
 , 'wd'
