@@ -12,7 +12,8 @@ ENV POSTGRES_USER postgres
 ENV POSTGRES_DB postgres
 ENV POSTGRES_PASSWORD postgres
 
-COPY --chown=postgres:postgres openaqdb/ /setup/
+#COPY --chown=postgres:postgres openaqdb/ /setup/
+COPY --chown=postgres:postgres setup/ /openaqdb/
 
 RUN \
     apt-get update \
@@ -42,10 +43,10 @@ RUN \
 EXPOSE 5432
 
 RUN mkdir -p /docker-entrypoint-initdb.d \
-    && ls -lht \
+    && ls /openaqdb -lht \
     && echo "#!/bin/bash" >/docker-entrypoint-initdb.d/001_initdb.sh \
     && echo "timescaledb-tune --quiet --yes" >>/docker-entrypoint-initdb.d/001_initdb.sh \
-    && echo "/setup/init.sh" >>/docker-entrypoint-initdb.d/001_initdb.sh
+    && echo "/openaqdb/init.sh" >>/docker-entrypoint-initdb.d/001_initdb.sh
 
 
 WORKDIR /openaqdb
