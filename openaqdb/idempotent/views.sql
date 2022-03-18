@@ -1,4 +1,3 @@
-
 BEGIN;
 
 --------------------------------------------------------
@@ -460,7 +459,7 @@ CREATE INDEX ON measurements_fastapi_base  (city);
 CREATE INDEX ON measurements_fastapi_base USING GIST (geog);
 
 -- 2021-11-30
--- Has been updated to use handle versions
+-- Has been updated to handle versions
 -- to remove the versions method just change the sensor_stats table
 -- and then remove the extra fields from the parameters section of the query
 DROP MATERIALIZED VIEW IF EXISTS locations_base_v2;
