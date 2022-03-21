@@ -23,9 +23,10 @@ CREATE INDEX rollups_rollup_idx ON rollups USING btree (rollup);
 CREATE INDEX rollups_sensors_id_idx ON rollups USING btree (sensors_id);
 CREATE INDEX rollups_st_idx ON rollups USING btree (st);
 
-
-
--- proposal to replace the one above
+-- The following tables, functions and views are to handle
+-- tracking coverage for the system. If possibly we may also want to replace
+-- the rollups table above (which uses groups) with the hourly_rollups table
+-- below. Therefor the table below also includes some extended summary stats
 CREATE TABLE IF NOT EXISTS hourly_rollups (
   sensors_id int NOT NULL --REFERENCES sensors ON DELETE CASCADE
 , datetime timestamptz NOT NULL
@@ -54,7 +55,8 @@ ON hourly_rollups
 USING btree (datetime);
 
 -- Create a hypertable (partitioned) using timescaledb
--- Uses the datetime column
+-- Data will also be partitioned by measurand id to make queries
+-- within one measurand faster
 SELECT create_hypertable(
   relation => 'hourly_rollups'
 , time_column_name => 'datetime'
@@ -66,7 +68,8 @@ SELECT create_hypertable(
 
 
 -- create a table to help us keep track of what days have been updated
--- this may or may not be temporary
+-- This table is used to back calculate rollup days. If the rollup service (lambda)
+-- is running than adding a day and nulling the calculated on will update that day
 CREATE TABLE IF NOT EXISTS daily_stats (
   day date NOT NULL UNIQUE
 , sensor_nodes_count bigint NOT NULL
@@ -78,8 +81,7 @@ CREATE TABLE IF NOT EXISTS daily_stats (
 , metadata jsonb
 );
 
-\timing
-
+-- this is the basic function used to rollup an entire day
 CREATE OR REPLACE FUNCTION calculate_rollup_daily_stats(day date) RETURNS bigint AS $$
 WITH data AS (
 SELECT (datetime - '1sec'::interval)::date as day
@@ -118,40 +120,6 @@ RETURNING measurements_count)
 SELECT measurements_count
 FROM inserts;
 $$ LANGUAGE SQL;
-
-
-
-
---SELECT * FROM calculate_rollup_daily_stats('2021-11-05'::date);
-
-
-INSERT INTO daily_stats (
-  day
-, sensor_nodes_count
-, sensors_count
-, hours_count
-, measurements_count
-)
-SELECT generate_series(MIN(datetime)::date, MAX(datetime)::date, '1day'::interval)::date
-, -1 as sensor_nodes_count
-, -1 as sensors_count
-, -1 as hours_count
-, -1 as measurements_count
-FROM measurements
-ON CONFLICT DO NOTHING;
-
-
--- CREATE INDEX hour_rollups_date_idx
--- ON hourly_rollups
--- USING btree ((datetime::date));
-
--- DROP INDEX hourly_rollups_sensors_id_idx;
--- DROP INDEX hourly_rollups_datetime_idx;
--- ALTER TABLE hourly_rollups
--- DROP CONSTRAINT hourly_rollups_sensors_id_datetime_key;
--- ALTER TABLE hourly_rollups
--- DROP CONSTRAINT hourly_rollups_sensors_id_fkey;
-
 
 -- Function to rollup a give interval to the hour
 -- date_trunc is used to ensure that only hourly data is inserted
@@ -285,6 +253,7 @@ SELECT COUNT(1)
 FROM inserted;
 $$ LANGUAGE SQL;
 
+-- helpers for measurand_id
 CREATE OR REPLACE FUNCTION calculate_hourly_rollup(id int, et timestamptz) RETURNS bigint AS $$
 SELECT calculate_hourly_rollup(id, et - '1hour'::interval, et);
 $$ LANGUAGE SQL;
@@ -295,16 +264,7 @@ SELECT calculate_hourly_rollup(id, dt::timestamptz, dt + '1day'::interval);
 $$ LANGUAGE SQL;
 
 
-SELECT *
-FROM hourly_rollups
-WHERE value_count > 10
-LIMIT 20;
-
-CREATE OR REPLACE FUNCTION expected_hourly_count(m jsonb) RETURNS int AS $$
-SELECT m->'hourly'
-$$ LANGUAGE SQL;
-
-
+-- Simple view for coverage
 CREATE OR REPLACE VIEW sensor_hourly_coverage AS
 SELECT r.sensors_id
 , datetime
@@ -316,101 +276,19 @@ SELECT r.sensors_id
 FROM hourly_rollups r
 JOIN sensors s ON (r.sensors_id = s.sensors_id);
 
-\timing
+-- For adding existing days to the stats table
+-- INSERT INTO daily_stats (
+--   day
+-- , sensor_nodes_count
+-- , sensors_count
+-- , hours_count
+-- , measurements_count
+-- )
+-- SELECT generate_series(MIN(datetime)::date, MAX(datetime)::date, '1day'::interval)::date
+-- , -1 as sensor_nodes_count
+-- , -1 as sensors_count
+-- , -1 as hours_count
+-- , -1 as measurements_count
+-- FROM measurements
+-- ON CONFLICT DO NOTHING;
 
-
-SELECT *
-FROM sensor_hourly_coverage
-WHERE sensors_id = 391269
-AND datetime > '2021-11-06'::timestamptz
-AND datetime <= '2021-11-07'::timestamptz;
-
-
---EXPLAIN (ANALYZE, BUFFERS, SETTINGS)
-SELECT sensors_id
-, datetime::date as day
-, SUM(value_count) as total_count
-, MAX(value_count) as max_count
-, MIN(value_count) as min_count
-, ROUND(AVG(coverage)) as coverage
-, MIN(coverage) as min_coverage
-, MAX(coverage) as max_coverage
-FROM sensor_hourly_coverage
-WHERE sensors_id = 1585569
-AND datetime > '2021-11-01'::timestamptz
-AND datetime <= '2022-02-01'::timestamptz
-GROUP BY 2,1
---LIMIT 30
-;
-
--- Need to test this out with a table partitioned by time
--- or just use a timescaledb hypertable
--- done
-
--- Need to update the ingest method so that when measurements
--- are added we update the this table at the same time
--- insert new data but only upsert the updated_on column (will need a new function)
--- the reason is because we will likely not have all the data ready
-
--- Need to create a function in the ingester lambda to do
--- Hourly (given an hour)
--- daily (given the day)
--- pending (all stale hours that have been updated, with limit)
--- done
-
--- Need to create a scheduler to run the new functions
--- hourly runs on the hour
--- cleanup could run each half hour??
--- daily could run for a while as needed
--- done
-
--- WITH dates AS (
--- SELECT generate_series(MIN(datetime),MAX(datetime),'3weeks'::interval) as day
--- FROM measurements)
--- SELECT calculate_hourly_rollup(day, day+'3weeks'::interval)
--- FROM dates;
-
--- \timing
-
--- SELECT datetime
--- , value_avg
--- , value_sd
--- , value_count
--- FROM hourly_rollups
--- WHERE measurands_id = 9
--- AND sensors_id = 1
--- LIMIT 30;
-
--- SELECT calculate_hourly_rollup(MIN(datetime)::date, MAX(datetime)::date)
--- FROM measurements;
-
-
--- Randomly update a few in the table
--- WITH updates AS (
--- SELECT datetime
--- , sensors_id
--- , calculated_on
--- FROM hourly_rollups
--- ORDER BY random()
--- LIMIT 100)
--- UPDATE hourly_rollups
--- SET updated_on = current_timestamp
--- FROM updates u
--- WHERE hourly_rollups.datetime = u.datetime
--- AND hourly_rollups.sensors_id = u.sensors_id;
-
-
--- WITH updates AS (
--- SELECT calculate_hourly_rollup(sensors_id, datetime) as n
--- FROM hourly_rollups
--- WHERE updated_on > calculated_on
--- LIMIT 100)
--- SELECT COALESCE(SUM(n), 0)::bigint as count
--- FROM updates;
-
-
--- SELECT sensors_id
--- , datetime
--- FROM hourly_rollups
--- WHERE updated_on > calculated_on
--- LIMIT 10;
