@@ -12,8 +12,7 @@ ENV POSTGRES_USER postgres
 ENV POSTGRES_DB postgres
 ENV POSTGRES_PASSWORD postgres
 
-#COPY --chown=postgres:postgres openaqdb/ /setup/
-COPY --chown=postgres:postgres setup/ /openaqdb/
+COPY --chown=postgres:postgres openaqdb/ /openaqdb/
 
 RUN \
     apt-get update \
