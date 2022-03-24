@@ -532,7 +532,11 @@ DECLARE
 _st timestamptz;
 _et timestamptz;
 t timestamptz;
+st timestamptz;
 BEGIN
+
+    SELECT current_timestamp INTO st;
+
     SELECT (config->>'start')::timestamptz INTO STRICT _st;
     SELECT (config->>'end')::timestamptz INTO STRICT _et;
 
@@ -548,20 +552,25 @@ BEGIN
     set metadata = metadata || jsonb_build_object('timezone',timezone(sn_lastpoint(sensor_nodes_id)))
     where not metadata ? 'timezone' and geom is null and ismobile;
 
+    SELECT log_performance('update-timezone', st) INTO st;
+
     RAISE NOTICE 'updating countries';
     update sensor_nodes set country = country(geom)
     where country is null and geom is not null;
     update sensor_nodes set country = country(sn_lastpoint(sensor_nodes_id))
     where country is null and geom is null and ismobile;
     COMMIT;
+    SELECT log_performance('update-countries', st) INTO st;
 
     RAISE NOTICE 'Updating sources Tables';
     PERFORM update_sources();
     COMMIT;
+    SELECT log_performance('update-sources', st) INTO st;
 
     RAISE NOTICE 'Updating Groups Tables';
     PERFORM update_groups();
     COMMIT;
+    SELECT log_performance('update-groups', st) INTO st;
 
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 day'::interval) as g)
@@ -571,12 +580,16 @@ BEGIN
         COMMIT;
     END LOOP;
 
+    SELECT log_performance('update-daily-rollups', st) INTO st;
+
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 month'::interval) as g)
     LOOP
         PERFORM rollups_monthly(t);
         COMMIT;
     END LOOP;
+
+    SELECT log_performance('update-monthly-rollups', st) INTO st;
 
     FOR t IN
         (SELECT g FROM generate_series(_st, _et, '1 year'::interval) as g)
@@ -585,45 +598,56 @@ BEGIN
         COMMIT;
     END LOOP;
 
+    SELECT log_performance('update-yearly-rollups', st) INTO st;
+
     PERFORM rollups_total();
     COMMIT;
+    SELECT log_performance('update-total-rollups', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensors_first_last';
     REFRESH MATERIALIZED VIEW sensors_first_last;
     COMMIT;
+    SELECT log_performance('update-sensors-first-last', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensor_nodes_json';
     REFRESH MATERIALIZED VIEW sensor_nodes_json;
     COMMIT;
+    SELECT log_performance('update-sensor-nodes-json', st) INTO st;
 
     RAISE NOTICE 'REFRESHING groups_view';
     REFRESH MATERIALIZED VIEW groups_view;
     COMMIT;
+    SELECT log_performance('update-groups-view', st) INTO st;
 
     RAISE NOTICE 'REFRESHING sensor_stats';
     REFRESH MATERIALIZED VIEW sensor_stats;
     COMMIT;
+    SELECT log_performance('update-sensor-stats', st) INTO st;
 
     RAISE NOTICE 'REFRESHING city_stats';
     REFRESH MATERIALIZED VIEW city_stats;
     COMMIT;
+    SELECT log_performance('update-city-stats', st) INTO st;
 
     RAISE NOTICE 'REFRESHING country_stats';
     REFRESH MATERIALIZED VIEW country_stats;
     COMMIT;
+    SELECT log_performance('update-country-stats', st) INTO st;
 
     RAISE NOTICE 'REFRESHING locations_base_v2';
     REFRESH MATERIALIZED VIEW locations_base_v2;
     COMMIT;
+    SELECT log_performance('update-locations-base', st) INTO st;
 
     RAISE NOTICE 'REFRESHING locations';
     REFRESH MATERIALIZED VIEW locations;
     COMMIT;
+    SELECT log_performance('update-locations', st) INTO st;
 
     RAISE NOTICE 'REFRESHING measurements_fastapi_base';
     REFRESH MATERIALIZED VIEW measurements_fastapi_base;
     COMMIT;
-
+    SELECT log_performance('update-measurements-base', st) INTO st;
 
 END;
 $$;

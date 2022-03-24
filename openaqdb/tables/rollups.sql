@@ -300,10 +300,6 @@ FROM hourly_rollups
 WHERE value_count > 10
 LIMIT 20;
 
-CREATE OR REPLACE FUNCTION expected_hourly_count(m jsonb) RETURNS int AS $$
-SELECT m->'hourly'
-$$ LANGUAGE SQL;
-
 
 CREATE OR REPLACE VIEW sensor_hourly_coverage AS
 SELECT r.sensors_id
