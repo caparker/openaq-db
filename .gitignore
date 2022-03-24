@@ -2,3 +2,5 @@
 .cdk.staging
 cdk.out
 .env
+.env*
+__pycache__*
