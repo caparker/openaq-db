@@ -293,7 +293,7 @@ FROM performance_log;
 
 CREATE OR REPLACE FUNCTION log_performance(text, timestamptz) RETURNS timestamptz AS $$
   INSERT INTO performance_log (process_name, start_datetime, end_datetime)
-  VALUES ($1, $2, current_timestamp)
+  VALUES (pg_backend_pid()||'-'||$1, $2, current_timestamp)
   RETURNING end_datetime;
 $$ LANGUAGE SQL;
 
